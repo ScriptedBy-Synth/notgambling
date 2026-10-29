@@ -290,6 +290,52 @@
 
   <!-- FIREBASE SDKs & GAME LOGIC -->
   <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Firebase Initialization Setup - automatically handles default environment or standard config
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'arcade-party-app-default';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+      apiKey: "AIzaSyDemoKeyForPublicTestingOnly12345",
+      authDomain: "arcade-lounge-demo.firebaseapp.com",
+      projectId: "arcade-lounge-demo",
+      storageBucket: "arcade-lounge-demo.appspot.com",
+      messagingSenderId: "100000000000",
+      appId: "1:100000000000:web:demo12345"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let currentUser = null;
+    let currentRoomCode = null;
+    let roomUnsubscribe = null;
+    let myTokens = 1000;
+
+    // Authenticate user on load
+    async function initAuth() {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.warn("Auth initialization error, using local player identity:", err);
+        currentUser = { uid: 'guest-' + Math.random().toString(36).substring(2, 9) };
+      }
+    }
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        currentUser = user;
+      }
+    });
+
+    initAuth();
+
     // Helper function to display temporary UI toast notifications
     function showToast(msg) {
       const toast = document.getElementById('toast');
@@ -338,7 +384,77 @@
       }
     };
 
-    // Room connection functions
+    // Room Firestore Sync Helper
+    function getRoomDocRef(code) {
+      return doc(db, 'artifacts', appId, 'public', 'data', 'rooms', code);
+    }
+
+    // Render Players in Room
+    function renderPlayersList(players) {
+      const container = document.getElementById('player-list-container');
+      const countBadge = document.getElementById('player-count-badge');
+      if (!container) return;
+
+      countBadge.innerText = players ? players.length : 1;
+      container.innerHTML = '';
+
+      if (!players || players.length === 0) {
+        const username = document.getElementById('input-username').value.trim() || 'Player';
+        container.innerHTML = `
+          <div class="flex items-center justify-between p-2 bg-slate-950/80 rounded-lg border border-slate-800">
+            <span class="text-xs font-semibold text-amber-400"><i class="fa-solid fa-user-astronaut mr-1.5"></i>${username} (You)</span>
+            <span class="text-[10px] text-emerald-400 font-mono">1,000 pts</span>
+          </div>
+        `;
+        return;
+      }
+
+      players.forEach(p => {
+        const isMe = currentUser && p.id === currentUser.uid;
+        const div = document.createElement('div');
+        div.className = "flex items-center justify-between p-2 bg-slate-950/80 rounded-lg border border-slate-800";
+        div.innerHTML = `
+          <span class="text-xs font-semibold ${isMe ? 'text-amber-400' : 'text-slate-200'}">
+            <i class="fa-solid fa-user-astronaut mr-1.5"></i>${p.name} ${isMe ? '(You)' : ''}
+          </span>
+          <span class="text-[10px] text-emerald-400 font-mono">${p.tokens || 1000} pts</span>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // Subscribe to Room Real-time State
+    function subscribeToRoom(code) {
+      if (roomUnsubscribe) roomUnsubscribe();
+
+      const roomRef = getRoomDocRef(code);
+      roomUnsubscribe = onSnapshot(roomRef, (snapshot) => {
+        if (!snapshot.exists()) {
+          showToast("Room was closed or deleted.");
+          leaveRoom();
+          return;
+        }
+
+        const data = snapshot.data();
+        renderPlayersList(data.players || []);
+
+        // Sync Roulette Spin event
+        if (data.lastSpin) {
+          const wheel = document.getElementById('roulette-wheel-inner');
+          if (wheel && data.lastSpin.deg) {
+            wheel.style.transform = `rotate(${data.lastSpin.deg}deg)`;
+          }
+          if (data.lastSpin.num !== undefined) {
+            document.getElementById('roulette-last-num').innerText = data.lastSpin.num;
+            document.getElementById('roulette-last-color').innerText = data.lastSpin.color;
+          }
+        }
+      }, (err) => {
+        console.error("Room listener error:", err);
+      });
+    }
+
+    // Room Connection Functions
     window.quickPlay = function() {
       const username = document.getElementById('input-username').value.trim() || 'Player';
       
@@ -352,27 +468,49 @@
       document.getElementById('nav-game-controls').classList.remove('hidden');
       document.getElementById('leave-room-btn').classList.remove('hidden');
 
+      renderPlayersList(null);
       showToast(`Welcome to the Arcade, ${username}!`);
     };
 
-    window.createRoom = function() {
+    window.createRoom = async function() {
       const username = document.getElementById('input-username').value.trim() || 'Player';
-      const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-      
-      document.getElementById('display-username').innerText = username;
-      document.getElementById('current-room-id').innerText = roomCode;
-      
-      document.getElementById('screen-lobby').classList.add('hidden');
-      document.getElementById('screen-game').classList.remove('hidden');
-      document.getElementById('screen-game').classList.add('flex');
-      document.getElementById('bottom-controls').classList.remove('hidden');
-      document.getElementById('nav-game-controls').classList.remove('hidden');
-      document.getElementById('leave-room-btn').classList.remove('hidden');
+      if (!currentUser) {
+        showToast("Connecting to server, please try again...");
+        return;
+      }
 
-      showToast(`Room ${roomCode} created!`);
+      const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      currentRoomCode = roomCode;
+
+      const roomRef = getRoomDocRef(roomCode);
+      const playerData = { id: currentUser.uid, name: username, tokens: myTokens };
+
+      try {
+        await setDoc(roomRef, {
+          createdAt: new Date().toISOString(),
+          code: roomCode,
+          players: [playerData]
+        });
+
+        document.getElementById('display-username').innerText = username;
+        document.getElementById('current-room-id').innerText = roomCode;
+        
+        document.getElementById('screen-lobby').classList.add('hidden');
+        document.getElementById('screen-game').classList.remove('hidden');
+        document.getElementById('screen-game').classList.add('flex');
+        document.getElementById('bottom-controls').classList.remove('hidden');
+        document.getElementById('nav-game-controls').classList.remove('hidden');
+        document.getElementById('leave-room-btn').classList.remove('hidden');
+
+        subscribeToRoom(roomCode);
+        showToast(`Room ${roomCode} created! Share this code with friends.`);
+      } catch (err) {
+        console.error("Error creating room:", err);
+        showToast("Failed to create room. Please try again.");
+      }
     };
 
-    window.joinRoom = function() {
+    window.joinRoom = async function() {
       const username = document.getElementById('input-username').value.trim() || 'Player';
       const roomCode = document.getElementById('input-room-code').value.trim().toUpperCase();
 
@@ -381,20 +519,71 @@
         return;
       }
 
-      document.getElementById('display-username').innerText = username;
-      document.getElementById('current-room-id').innerText = roomCode;
+      if (!currentUser) {
+        showToast("Connecting to server, please try again...");
+        return;
+      }
 
-      document.getElementById('screen-lobby').classList.add('hidden');
-      document.getElementById('screen-game').classList.remove('hidden');
-      document.getElementById('screen-game').classList.add('flex');
-      document.getElementById('bottom-controls').classList.remove('hidden');
-      document.getElementById('nav-game-controls').classList.remove('hidden');
-      document.getElementById('leave-room-btn').classList.remove('hidden');
+      const roomRef = getRoomDocRef(roomCode);
 
-      showToast(`Joined Room ${roomCode}!`);
+      try {
+        const snap = await getDoc(roomRef);
+        if (!snap.exists()) {
+          showToast(`Room code "${roomCode}" does not exist! Check the code and try again.`);
+          return;
+        }
+
+        const roomData = snap.data();
+        const existingPlayers = roomData.players || [];
+        const playerData = { id: currentUser.uid, name: username, tokens: myTokens };
+
+        // Filter out old entry if user is re-joining
+        const updatedPlayers = existingPlayers.filter(p => p.id !== currentUser.uid);
+        updatedPlayers.push(playerData);
+
+        await updateDoc(roomRef, {
+          players: updatedPlayers
+        });
+
+        currentRoomCode = roomCode;
+        document.getElementById('display-username').innerText = username;
+        document.getElementById('current-room-id').innerText = roomCode;
+
+        document.getElementById('screen-lobby').classList.add('hidden');
+        document.getElementById('screen-game').classList.remove('hidden');
+        document.getElementById('screen-game').classList.add('flex');
+        document.getElementById('bottom-controls').classList.remove('hidden');
+        document.getElementById('nav-game-controls').classList.remove('hidden');
+        document.getElementById('leave-room-btn').classList.remove('hidden');
+
+        subscribeToRoom(roomCode);
+        showToast(`Joined Room ${roomCode}!`);
+      } catch (err) {
+        console.error("Error joining room:", err);
+        showToast("Error joining room. Please check your room code.");
+      }
     };
 
-    window.leaveRoom = function() {
+    window.leaveRoom = async function() {
+      if (currentRoomCode && currentUser) {
+        const roomRef = getRoomDocRef(currentRoomCode);
+        try {
+          const snap = await getDoc(roomRef);
+          if (snap.exists()) {
+            const players = (snap.data().players || []).filter(p => p.id !== currentUser.uid);
+            await updateDoc(roomRef, { players: players });
+          }
+        } catch (e) {
+          console.warn("Cleanup on leave:", e);
+        }
+      }
+
+      if (roomUnsubscribe) {
+        roomUnsubscribe();
+        roomUnsubscribe = null;
+      }
+
+      currentRoomCode = null;
       document.getElementById('screen-lobby').classList.remove('hidden');
       document.getElementById('screen-game').classList.add('hidden');
       document.getElementById('screen-game').classList.remove('flex');
@@ -411,22 +600,32 @@
       showToast(`Placed ${selectedChipValue} tokens on ${type}`);
     };
 
-    // Trigger spin effect
-    window.triggerRouletteSpin = function() {
-      const wheel = document.getElementById('roulette-wheel-inner');
+    // Trigger spin effect synchronized with room
+    window.triggerRouletteSpin = async function() {
       const randomDeg = 1440 + Math.floor(Math.random() * 360);
-      wheel.style.transform = `rotate(${randomDeg}deg)`;
-      
       const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
       const colors = ['RED', 'BLUE', 'GOLD STAR'];
       const num = numbers[Math.floor(Math.random() * numbers.length)];
       const color = colors[Math.floor(Math.random() * colors.length)];
 
-      setTimeout(() => {
-        document.getElementById('roulette-last-num').innerText = num;
-        document.getElementById('roulette-last-color').innerText = color;
-        showToast(`Lucky Spin landed on ${num} (${color})!`);
-      }, 6000);
+      if (currentRoomCode) {
+        const roomRef = getRoomDocRef(currentRoomCode);
+        try {
+          await updateDoc(roomRef, {
+            lastSpin: { deg: randomDeg, num: num, color: color, time: new Date().toISOString() }
+          });
+        } catch (err) {
+          console.error("Spin sync error:", err);
+        }
+      } else {
+        const wheel = document.getElementById('roulette-wheel-inner');
+        wheel.style.transform = `rotate(${randomDeg}deg)`;
+        setTimeout(() => {
+          document.getElementById('roulette-last-num').innerText = num;
+          document.getElementById('roulette-last-color').innerText = color;
+          showToast(`Lucky Spin landed on ${num} (${color})!`);
+        }, 6000);
+      }
     };
   </script>
 </body>
