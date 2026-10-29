@@ -1,0 +1,433 @@
+<!-- ... existing code ... -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Arcade Lounge: Target 21 & Lucky Spin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            serif: ['Fredoka', 'sans-serif'],
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            felt: '#1e1b4b',
+            'felt-dark': '#0f172a',
+            gold: '#f59e0b',
+            'gold-dark': '#d97706',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+    ::-webkit-scrollbar-thumb { background: rgba(245, 158, 11, 0.4); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(245, 158, 11, 0.8); }
+
+    .poker-felt {
+      background: radial-gradient(circle at center, #312e81 0%, #1e1b4b 70%, #0f172a 100%);
+      box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.7);
+    }
+    
+    .gold-gradient-text {
+      background: linear-gradient(135deg, #fef08a 0%, #f59e0b 50%, #b45309 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Wheel animation style */
+    .roulette-wheel {
+      transition: transform 6s cubic-bezier(0.15, 0.85, 0.35, 1.005);
+    }
+
+    .chip-shadow {
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5), inset 0 2px 2px rgba(255, 255, 255, 0.4), inset 0 -2px 2px rgba(0, 0, 0, 0.4);
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans select-none overflow-x-hidden bg-slate-950 text-slate-100">
+
+  <!-- APP CONTAINER -->
+  <div id="app" class="h-full flex flex-col justify-between">
+
+    <!-- TOP NAV BAR -->
+    <header class="bg-slate-900/90 border-b border-indigo-500/20 px-4 py-2.5 flex items-center justify-between z-20 backdrop-blur-md">
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center text-slate-950 font-bold font-serif text-xl shadow-lg">
+          ⭐
+        </div>
+        <div>
+          <h1 class="font-serif font-bold text-lg leading-tight gold-gradient-text tracking-wide">FUN ARCADE</h1>
+          <p id="room-display-tag" class="text-xs text-slate-400">Room Code: <span id="current-room-id" class="text-slate-200 font-mono font-semibold">Offline</span></p>
+        </div>
+      </div>
+
+      <!-- Navigation & Game Switcher -->
+      <div id="nav-game-controls" class="hidden flex items-center space-x-1 sm:space-x-2 bg-slate-950/60 p-1 rounded-xl border border-slate-800">
+        <button id="nav-blackjack-btn" onclick="switchGame('blackjack')" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center space-x-1.5 bg-amber-500 text-slate-950 shadow">
+          <i class="fa-solid fa-layer-group text-xs"></i>
+          <span>Target 21</span>
+        </button>
+        <button id="nav-roulette-btn" onclick="switchGame('roulette')" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center space-x-1.5 text-slate-400 hover:text-slate-200">
+          <i class="fa-solid fa-dharmachakra text-xs"></i>
+          <span>Lucky Spin</span>
+        </button>
+      </div>
+
+      <!-- User Profile & Balance -->
+      <div id="user-bar" class="flex items-center space-x-3">
+        <div class="text-right hidden sm:block">
+          <div id="display-username" class="text-xs font-semibold text-slate-300">Player</div>
+          <div class="text-xs text-amber-400 flex items-center justify-end space-x-1">
+            <i class="fa-solid fa-ticket text-[10px]"></i>
+            <span id="display-chips" class="font-mono font-bold">1,000</span>
+          </div>
+        </div>
+        <button onclick="leaveRoom()" id="leave-room-btn" class="hidden text-xs bg-slate-800 hover:bg-red-950 hover:text-red-400 border border-slate-700 hover:border-red-800 text-slate-300 px-2.5 py-1.5 rounded-lg transition-all">
+          <i class="fa-solid fa-right-from-bracket"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- MAIN VIEW AREA -->
+    <main class="flex-1 relative overflow-hidden flex flex-col">
+
+      <!-- SCREEN 1: LOGIN / LOBBY JOIN -->
+      <div id="screen-lobby" class="flex-1 flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-md">
+        <div class="max-w-md w-full bg-slate-900 border border-indigo-500/30 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-indigo-500/5 relative overflow-hidden">
+          <div class="absolute -right-10 -top-10 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+          
+          <div class="text-center mb-6">
+            <h2 class="text-3xl font-serif font-extrabold gold-gradient-text tracking-wider">ARCADE LOUNGE</h2>
+            <p class="text-slate-400 text-xs mt-1">Multiplayer Party Card & Wheel Games</p>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Nickname</label>
+              <div class="relative">
+                <i class="fa-solid fa-user absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm"></i>
+                <input type="text" id="input-username" maxlength="12" placeholder="Player name..." class="w-full bg-slate-950 border border-slate-800 focus:border-amber-500 rounded-xl py-2.5 pl-9 pr-3 text-sm text-slate-100 placeholder-slate-600 outline-none transition-all">
+              </div>
+            </div>
+
+            <div class="border-t border-slate-800 my-4"></div>
+
+            <div class="space-y-3">
+              <!-- Fast Direct Play Button -->
+              <button onclick="quickPlay()" class="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-teal-400 hover:to-emerald-500 text-slate-950 font-bold rounded-xl shadow-lg transition-all text-sm uppercase tracking-wider flex items-center justify-center space-x-2">
+                <i class="fa-solid fa-play"></i>
+                <span>Enter Arcade (Quick Play)</span>
+              </button>
+
+              <button onclick="createRoom()" class="w-full py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-yellow-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl shadow-lg transition-all text-xs uppercase tracking-wider flex items-center justify-center space-x-2">
+                <i class="fa-solid fa-plus-circle"></i>
+                <span>Create Arcade Room</span>
+              </button>
+
+              <div class="flex items-center space-x-2">
+                <input type="text" id="input-room-code" uppercase placeholder="ROOM CODE" maxlength="6" class="flex-1 bg-slate-950 border border-slate-800 focus:border-amber-500 rounded-xl py-2.5 px-3 text-sm text-center font-mono font-bold tracking-widest text-slate-100 placeholder-slate-600 outline-none transition-all uppercase">
+                <button onclick="joinRoom()" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold rounded-xl transition-all text-sm">
+                  Join
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-6 text-center text-xs text-slate-500">
+            Real-time party play powered by Firebase.
+          </div>
+        </div>
+      </div>
+
+      <!-- SCREEN 2: GAME ARENA (Shared Felt) -->
+      <div id="screen-game" class="hidden flex-1 flex flex-col md:flex-row relative">
+
+        <!-- GAME AREA / FELT -->
+        <div class="flex-1 poker-felt relative flex flex-col justify-between p-3 sm:p-6 overflow-y-auto min-h-[400px]">
+
+          <!-- GAME 1: TARGET 21 TABLE -->
+          <div id="game-blackjack" class="flex-1 flex flex-col justify-between max-w-4xl mx-auto w-full">
+            
+            <!-- Robot House Target Area -->
+            <div class="text-center my-2">
+              <div class="inline-block bg-slate-950/60 border border-amber-500/30 backdrop-blur-sm px-4 py-1 rounded-full text-xs font-semibold text-amber-400 tracking-wide mb-2">
+                ROBOT DEALER <span id="bj-dealer-score" class="ml-1 text-slate-300 font-mono">0</span>
+              </div>
+              <div id="bj-dealer-cards" class="flex justify-center space-x-2 min-h-[90px] items-center">
+                <div class="text-xs text-slate-400 italic">Waiting for round to start...</div>
+              </div>
+            </div>
+
+            <!-- Table Status Message Box -->
+            <div id="bj-status-msg" class="text-center py-2 px-4 rounded-xl bg-slate-950/80 border border-amber-500/30 text-amber-400 font-serif text-sm sm:text-base font-bold my-2 shadow-lg max-w-md mx-auto min-h-[40px] flex items-center justify-center">
+              Enter your points to start!
+            </div>
+
+            <!-- Players Seats Container -->
+            <div id="bj-players-seats" class="grid grid-cols-2 sm:grid-cols-4 gap-3 my-2">
+              <!-- Rendered via JS dynamically -->
+            </div>
+          </div>
+
+          <!-- GAME 2: LUCKY SPIN WHEEL -->
+          <div id="game-roulette" class="hidden flex-1 flex flex-col items-center justify-start space-y-4 max-w-4xl mx-auto w-full">
+            
+            <!-- Wheel & Result Display -->
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4 w-full">
+              
+              <!-- Wheel Graphic -->
+              <div class="relative w-40 h-40 sm:w-48 sm:h-48 rounded-full border-4 border-amber-500 bg-slate-900 shadow-2xl flex items-center justify-center overflow-hidden flex-shrink-0">
+                <div id="roulette-wheel-inner" class="roulette-wheel absolute inset-0 rounded-full flex items-center justify-center border-2 border-dashed border-amber-400/40">
+                  <div class="text-[10px] font-mono text-slate-400 tracking-tighter">LUCKY SPIN</div>
+                </div>
+                <!-- Needle Indicator -->
+                <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-8 border-l-transparent border-r-8 border-r-transparent border-t-12 border-t-amber-400 z-10 filter drop-shadow"></div>
+                <!-- Center Hub -->
+                <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 border-2 border-slate-900 flex items-center justify-center shadow-inner z-10">
+                  <span id="roulette-last-num" class="font-bold text-slate-950 text-sm font-mono">--</span>
+                </div>
+              </div>
+
+              <!-- Spin Info & Controls -->
+              <div class="text-center sm:text-left bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+                <div class="text-xs text-slate-400 mb-1">Wheel Status: <span id="roulette-status-text" class="text-amber-400 font-semibold">Ready to Spin</span></div>
+                <div class="text-xs text-slate-400">Winning Section: <span id="roulette-last-color" class="font-bold text-slate-200">None</span></div>
+                <button id="btn-roulette-spin" onclick="triggerRouletteSpin()" class="mt-3 px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold uppercase rounded-lg shadow-md transition-all">
+                  Spin Wheel
+                </button>
+              </div>
+            </div>
+
+            <!-- Lucky Spin Board -->
+            <div class="w-full bg-slate-900/90 border border-amber-500/30 rounded-xl p-3 shadow-xl overflow-x-auto">
+              <div class="min-w-[500px]">
+                <!-- Dozens & Outside Bets -->
+                <div class="grid grid-cols-12 gap-1 text-center font-bold text-xs mb-2">
+                  <button onclick="placeRouletteBet('RED')" class="col-span-4 bg-red-600 hover:bg-red-500 text-white py-2 rounded border border-red-400 flex justify-between px-2 items-center">
+                    <span>RED</span>
+                    <span id="bet-count-RED" class="text-[10px] bg-slate-900/60 px-1 rounded text-amber-400">0</span>
+                  </button>
+                  <button onclick="placeRouletteBet('BLACK')" class="col-span-4 bg-slate-800 hover:bg-slate-700 text-white py-2 rounded border border-slate-600 flex justify-between px-2 items-center">
+                    <span>BLUE</span>
+                    <span id="bet-count-BLACK" class="text-[10px] bg-slate-900/60 px-1 rounded text-amber-400">0</span>
+                  </button>
+                  <button onclick="placeRouletteBet('GREEN')" class="col-span-4 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded border border-emerald-400 flex justify-between px-2 items-center">
+                    <span>GOLD STAR</span>
+                    <span id="bet-count-GREEN" class="text-[10px] bg-slate-900/60 px-1 rounded text-amber-400">0</span>
+                  </button>
+                </div>
+
+                <div class="grid grid-cols-12 gap-1 text-center font-bold text-xs">
+                  <button onclick="placeRouletteBet('EVEN')" class="col-span-3 bg-slate-800/80 hover:bg-slate-700 text-slate-200 py-1.5 rounded border border-slate-700">EVEN</button>
+                  <button onclick="placeRouletteBet('ODD')" class="col-span-3 bg-slate-800/80 hover:bg-slate-700 text-slate-200 py-1.5 rounded border border-slate-700">ODD</button>
+                  <button onclick="placeRouletteBet('1-18')" class="col-span-3 bg-slate-800/80 hover:bg-slate-700 text-slate-200 py-1.5 rounded border border-slate-700">1 to 18</button>
+                  <button onclick="placeRouletteBet('19-36')" class="col-span-3 bg-slate-800/80 hover:bg-slate-700 text-slate-200 py-1.5 rounded border border-slate-700">19 to 36</button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- SIDEBAR: ROOM MEMBERS & CHAT -->
+        <aside class="w-full md:w-64 bg-slate-900/95 border-t md:border-t-0 md:border-l border-slate-800 p-3 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+              <span class="text-xs font-bold text-slate-400 tracking-wider uppercase">Players In Room</span>
+              <span id="player-count-badge" class="bg-amber-500/20 text-amber-400 text-[10px] px-2 py-0.5 rounded-full font-bold">1</span>
+            </div>
+            <div id="player-list-container" class="mt-2 space-y-1.5 max-h-36 md:max-h-60 overflow-y-auto">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+
+          <!-- Quick Action / Rules Tip -->
+          <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 mt-3 text-[11px] text-slate-400">
+            <span class="text-amber-400 font-semibold block mb-0.5"><i class="fa-solid fa-gamepad mr-1"></i> Family Arcade Sync</span>
+            Target 21 & Lucky Spin wheel sync across devices in real time.
+          </div>
+        </aside>
+
+      </div>
+
+      <!-- BOTTOM CONTROL BAR (BETTING & CARD ACTIONS) -->
+      <div id="bottom-controls" class="hidden bg-slate-900 border-t border-amber-500/20 p-2.5 sm:p-4 z-20">
+        <div class="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+          
+          <!-- Token Selector -->
+          <div class="flex items-center space-x-2">
+            <span class="text-xs text-slate-400 font-semibold mr-1 hidden sm:inline">TOKENS:</span>
+            <button onclick="selectChip(10)" class="chip-btn w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-blue-600 border-2 border-dashed border-white text-white font-bold text-xs chip-shadow transition-transform active:scale-95" data-val="10">10</button>
+            <button onclick="selectChip(25)" class="chip-btn w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-emerald-600 border-2 border-dashed border-white text-white font-bold text-xs chip-shadow transition-transform active:scale-95" data-val="25">25</button>
+            <button onclick="selectChip(100)" class="chip-btn w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-amber-500 border-2 border-dashed border-amber-950 text-slate-950 font-bold text-xs chip-shadow transition-transform active:scale-95 border-amber-300 ring-2 ring-amber-400/50" data-val="100">100</button>
+            <button onclick="selectChip(500)" class="chip-btn w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-purple-600 border-2 border-dashed border-white text-white font-bold text-xs chip-shadow transition-transform active:scale-95" data-val="500">500</button>
+          </div>
+
+          <!-- Dynamic Action Buttons (Hit, Stand, Deal, Place Bet) -->
+          <div id="action-buttons" class="flex items-center space-x-2 w-full sm:w-auto justify-end">
+            <!-- Rendered via JS depending on current active game & state -->
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- NOTIFICATION TOAST -->
+  <div id="toast" class="fixed top-14 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border border-amber-500 text-slate-100 px-4 py-2 rounded-xl text-xs sm:text-sm shadow-2xl opacity-0 pointer-events-none transition-all duration-300">
+    <span id="toast-msg">Notification message</span>
+  </div>
+
+  <!-- FIREBASE SDKs & GAME LOGIC -->
+  <script type="module">
+    // Helper function to display temporary UI toast notifications
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toast-msg');
+      if (toast && toastMsg) {
+        toastMsg.innerText = msg;
+        toast.classList.remove('opacity-0', 'pointer-events-none');
+        setTimeout(() => {
+          toast.classList.add('opacity-0', 'pointer-events-none');
+        }, 3000);
+      }
+    }
+
+    // Global selected token value
+    let selectedChipValue = 100;
+
+    window.selectChip = function(val) {
+      selectedChipValue = val;
+      document.querySelectorAll('.chip-btn').forEach(btn => {
+        if (parseInt(btn.getAttribute('data-val')) === val) {
+          btn.classList.add('ring-2', 'ring-amber-400/50');
+        } else {
+          btn.classList.remove('ring-2', 'ring-amber-400/50');
+        }
+      });
+      showToast(`Selected ${val} tokens`);
+    };
+
+    // Navigation and game view switcher
+    window.switchGame = function(game) {
+      const bjGame = document.getElementById('game-blackjack');
+      const rouletteGame = document.getElementById('game-roulette');
+      const bjBtn = document.getElementById('nav-blackjack-btn');
+      const rouletteBtn = document.getElementById('nav-roulette-btn');
+
+      if (game === 'blackjack') {
+        bjGame.classList.remove('hidden');
+        rouletteGame.classList.add('hidden');
+        bjBtn.className = "px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center space-x-1.5 bg-amber-500 text-slate-950 shadow";
+        rouletteBtn.className = "px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center space-x-1.5 text-slate-400 hover:text-slate-200";
+      } else {
+        bjGame.classList.add('hidden');
+        rouletteGame.classList.remove('hidden');
+        rouletteBtn.className = "px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center space-x-1.5 bg-amber-500 text-slate-950 shadow";
+        bjBtn.className = "px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center space-x-1.5 text-slate-400 hover:text-slate-200";
+      }
+    };
+
+    // Room connection functions
+    window.quickPlay = function() {
+      const username = document.getElementById('input-username').value.trim() || 'Player';
+      
+      document.getElementById('display-username').innerText = username;
+      document.getElementById('current-room-id').innerText = 'SOLO';
+      
+      document.getElementById('screen-lobby').classList.add('hidden');
+      document.getElementById('screen-game').classList.remove('hidden');
+      document.getElementById('screen-game').classList.add('flex');
+      document.getElementById('bottom-controls').classList.remove('hidden');
+      document.getElementById('nav-game-controls').classList.remove('hidden');
+      document.getElementById('leave-room-btn').classList.remove('hidden');
+
+      showToast(`Welcome to the Arcade, ${username}!`);
+    };
+
+    window.createRoom = function() {
+      const username = document.getElementById('input-username').value.trim() || 'Player';
+      const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      
+      document.getElementById('display-username').innerText = username;
+      document.getElementById('current-room-id').innerText = roomCode;
+      
+      document.getElementById('screen-lobby').classList.add('hidden');
+      document.getElementById('screen-game').classList.remove('hidden');
+      document.getElementById('screen-game').classList.add('flex');
+      document.getElementById('bottom-controls').classList.remove('hidden');
+      document.getElementById('nav-game-controls').classList.remove('hidden');
+      document.getElementById('leave-room-btn').classList.remove('hidden');
+
+      showToast(`Room ${roomCode} created!`);
+    };
+
+    window.joinRoom = function() {
+      const username = document.getElementById('input-username').value.trim() || 'Player';
+      const roomCode = document.getElementById('input-room-code').value.trim().toUpperCase();
+
+      if (!roomCode) {
+        showToast('Please enter a room code.');
+        return;
+      }
+
+      document.getElementById('display-username').innerText = username;
+      document.getElementById('current-room-id').innerText = roomCode;
+
+      document.getElementById('screen-lobby').classList.add('hidden');
+      document.getElementById('screen-game').classList.remove('hidden');
+      document.getElementById('screen-game').classList.add('flex');
+      document.getElementById('bottom-controls').classList.remove('hidden');
+      document.getElementById('nav-game-controls').classList.remove('hidden');
+      document.getElementById('leave-room-btn').classList.remove('hidden');
+
+      showToast(`Joined Room ${roomCode}!`);
+    };
+
+    window.leaveRoom = function() {
+      document.getElementById('screen-lobby').classList.remove('hidden');
+      document.getElementById('screen-game').classList.add('hidden');
+      document.getElementById('screen-game').classList.remove('flex');
+      document.getElementById('bottom-controls').classList.add('hidden');
+      document.getElementById('nav-game-controls').classList.add('hidden');
+      document.getElementById('leave-room-btn').classList.add('hidden');
+      document.getElementById('current-room-id').innerText = 'Offline';
+
+      showToast('Left room.');
+    };
+
+    // Roulette / Lucky Spin place bet helper
+    window.placeRouletteBet = function(type) {
+      showToast(`Placed ${selectedChipValue} tokens on ${type}`);
+    };
+
+    // Trigger spin effect
+    window.triggerRouletteSpin = function() {
+      const wheel = document.getElementById('roulette-wheel-inner');
+      const randomDeg = 1440 + Math.floor(Math.random() * 360);
+      wheel.style.transform = `rotate(${randomDeg}deg)`;
+      
+      const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
+      const colors = ['RED', 'BLUE', 'GOLD STAR'];
+      const num = numbers[Math.floor(Math.random() * numbers.length)];
+      const color = colors[Math.floor(Math.random() * colors.length)];
+
+      setTimeout(() => {
+        document.getElementById('roulette-last-num').innerText = num;
+        document.getElementById('roulette-last-color').innerText = color;
+        showToast(`Lucky Spin landed on ${num} (${color})!`);
+      }, 6000);
+    };
+  </script>
+</body>
+</html>
